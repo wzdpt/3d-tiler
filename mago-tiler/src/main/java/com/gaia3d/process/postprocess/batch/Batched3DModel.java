@@ -28,8 +28,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 
 @SuppressWarnings("ALL")
 @Slf4j
@@ -72,26 +72,6 @@ public class Batched3DModel implements ContentModel {
 
         List<TileInfo> tileInfos = contentInfo.getTileInfos();
         int batchLength = tileInfos.size();
-
-        List<String> uuidList = new ArrayList<>();
-        List<String> nameList = new ArrayList<>();
-        List<String> fileNameList = new ArrayList<>();
-        List<String> nodeNameList = new ArrayList<>();
-
-        tileInfos.forEach((tileInfo) -> {
-            GaiaAttribute attribute = tileInfo.getScene().getAttribute();
-            Map<String, String> attributes = attribute.getAttributes();
-
-            String uuid = attributes.getOrDefault("geometry", "DefaultName");
-            String name = attributes.getOrDefault("name", "DefaultName");
-            String fileName = attribute.getFileName();
-            String nodeName = attribute.getNodeName();
-
-            uuidList.add(uuid);
-            nameList.add(name);
-            fileNameList.add(fileName);
-            nodeNameList.add(nodeName);
-        });
 
         if (batchedSet == null) {
             log.error("[ERROR] BatchedSet is null, return null.");
@@ -144,34 +124,14 @@ public class Batched3DModel implements ContentModel {
 
         /* BatchTable */
         GaiaBatchTableMap<String, List<String>> batchTableMap = new GaiaBatchTableMap<>();
-        AtomicInteger batchIdIndex = new AtomicInteger(0);
         tileInfos.forEach((tileInfo) -> {
             GaiaAttribute attribute = tileInfo.getScene().getAttribute();
             Map<String, String> attributes = attribute.getAttributes();
-            GaiaSet set = tileInfo.getSet();
-
-            String UUID = attribute.getIdentifier().toString();
-            String FileName = attribute.getFileName();
-            String NodeName = attribute.getNodeName();
-
-            UUID = StringUtils.convertUTF8(UUID);
-            FileName = StringUtils.convertUTF8(FileName);
-            NodeName = StringUtils.convertUTF8(NodeName);
-
-            batchTableMap.computeIfAbsent("UUID", k -> new ArrayList<>());
-
-            batchTableMap.get("UUID").add(UUID);
-
-            batchTableMap.computeIfAbsent("FileName", k -> new ArrayList<>());
-            batchTableMap.get("FileName").add(FileName);
-
-            batchTableMap.computeIfAbsent("NodeName", k -> new ArrayList<>());
-            batchTableMap.get("NodeName").add(NodeName);
-
-            batchTableMap.computeIfAbsent("BatchId", k -> new ArrayList<>());
-            batchTableMap.get("BatchId").add(String.valueOf(batchIdIndex.getAndIncrement()));
 
             attributes.forEach((key, value) -> {
+                if (isExcludedBatchAttribute(key)) {
+                    return;
+                }
                 String utf8Value = StringUtils.convertUTF8(value);
                 batchTableMap.computeIfAbsent(key, k -> new ArrayList<>());
                 batchTableMap.get(key).add(utf8Value);
@@ -246,6 +206,18 @@ public class Batched3DModel implements ContentModel {
             log.error("[ERROR] :", e);
         }
         return contentInfo;
+    }
+
+    private boolean isExcludedBatchAttribute(String key) {
+        if (key == null) {
+            return true;
+        }
+
+        String normalized = key.trim().toLowerCase(Locale.ROOT);
+        return "nodename".equals(normalized)
+                || "batchid".equals(normalized)
+                || "filename".equals(normalized)
+                || "id".equals(normalized);
     }
 
     private byte[] readGlb(File glbOutputFile) {

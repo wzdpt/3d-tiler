@@ -39,7 +39,6 @@ import org.citygml4j.core.model.vegetation.SolitaryVegetationObject;
 import org.citygml4j.core.model.waterbody.WaterBody;
 import org.citygml4j.core.model.waterbody.WaterGroundSurface;
 import org.citygml4j.core.model.waterbody.WaterSurface;
-import org.citygml4j.core.model.generics.GenericAttributeSet;
 import org.citygml4j.xml.CityGMLContext;
 import org.citygml4j.xml.CityGMLContextException;
 import org.citygml4j.xml.reader.CityGMLInputFactory;
@@ -71,6 +70,10 @@ import java.util.Map;
 @Slf4j
 @RequiredArgsConstructor
 public class CityGmlConverter extends AbstractGeometryConverter implements Converter {
+
+    private static final String ATTR_BUILDING_NAME = "building_name";
+    private static final String ATTR_BUILDING = "building";
+    private static final String ATTR_AMENITY = "amenity";
 
     private final Parametric3DOptions options;
 
@@ -280,38 +283,22 @@ public class CityGmlConverter extends AbstractGeometryConverter implements Conve
                 continue;
             }
 
-            appendGenericAttribute(targetAttributes, genericAttribute, null);
-        }
-    }
-
-    private void appendGenericAttribute(Map<String, String> targetAttributes, AbstractGenericAttribute<?> genericAttribute, String keyPrefix) {
-        String name = genericAttribute.getName();
-        if (name == null || name.isBlank()) {
-            return;
-        }
-
-        String key = keyPrefix == null ? name : keyPrefix + "." + name;
-        if (genericAttribute instanceof GenericAttributeSet genericAttributeSet) {
-            if (!genericAttributeSet.isSetValue()) {
-                return;
+            String attributeName = genericAttribute.getName();
+            if (attributeName == null || attributeName.isBlank()) {
+                continue;
             }
 
-            for (AbstractGenericAttributeProperty childProperty : genericAttributeSet.getValue()) {
-                if (childProperty == null) {
-                    continue;
-                }
-
-                AbstractGenericAttribute<?> childAttribute = childProperty.getObject();
-                if (childAttribute != null) {
-                    appendGenericAttribute(targetAttributes, childAttribute, key);
-                }
+            String normalizedName = attributeName.toLowerCase();
+            if (!ATTR_BUILDING_NAME.equals(normalizedName)
+                    && !ATTR_BUILDING.equals(normalizedName)
+                    && !ATTR_AMENITY.equals(normalizedName)) {
+                continue;
             }
-            return;
-        }
 
-        String value = genericValueToString(genericAttribute.getValue());
-        if (value != null) {
-            targetAttributes.putIfAbsent(key, value);
+            String value = genericValueToString(genericAttribute.getValue());
+            if (value != null) {
+                targetAttributes.putIfAbsent(normalizedName, value);
+            }
         }
     }
 

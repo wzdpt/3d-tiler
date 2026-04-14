@@ -11,7 +11,6 @@ import com.gaia3d.process.postprocess.ContentModel;
 import com.gaia3d.process.postprocess.instance.GaiaFeatureTable;
 import com.gaia3d.process.tileprocess.tile.ContentInfo;
 import com.gaia3d.process.tileprocess.tile.TileInfo;
-import com.gaia3d.util.GaiaSceneUtils;
 import com.gaia3d.util.StringUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.joml.Matrix3d;
@@ -21,8 +20,8 @@ import java.io.File;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 3D Tiles 1.1 Batched Model
@@ -104,33 +103,15 @@ public class Batched3DModelV2 implements ContentModel {
 
         /* create BatchTable */
         GaiaBatchTableMap<String, List<String>> batchTableMap = new GaiaBatchTableMap<>();
-        AtomicInteger batchIdIndex = new AtomicInteger(0);
         tileInfos.forEach((tileInfo) -> {
             GaiaAttribute attribute = tileInfo.getScene()
                     .getAttribute();
             Map<String, String> attributes = attribute.getAttributes();
-            String UUID = attribute.getIdentifier()
-                    .toString();
-            String FileName = attribute.getFileName();
-            String NodeName = attribute.getNodeName();
-
-            UUID = StringUtils.convertUTF8(UUID);
-            FileName = StringUtils.convertUTF8(FileName);
-            NodeName = StringUtils.convertUTF8(NodeName);
-
-            batchTableMap.computeIfAbsent("id", k -> new ArrayList<>());
-            batchTableMap.get("id").add(UUID);
-
-            batchTableMap.computeIfAbsent("FileName", k -> new ArrayList<>());
-            batchTableMap.get("FileName").add(FileName);
-
-            batchTableMap.computeIfAbsent("NodeName", k -> new ArrayList<>());
-            batchTableMap.get("NodeName").add(NodeName);
-
-            batchTableMap.computeIfAbsent("BatchId", k -> new ArrayList<>());
-            batchTableMap.get("BatchId").add(String.valueOf(batchIdIndex.getAndIncrement()));
 
             attributes.forEach((key, value) -> {
+                if (isExcludedBatchAttribute(key)) {
+                    return;
+                }
                 String utf8Value = StringUtils.convertUTF8(value);
                 batchTableMap.computeIfAbsent(key, k -> new ArrayList<>());
                 batchTableMap.get(key).add(utf8Value);
@@ -145,5 +126,17 @@ public class Batched3DModelV2 implements ContentModel {
 
         this.gltfWriter.writeGlb(scene, glbOutputFile, featureTable, batchTableMap);
         return contentInfo;
+    }
+
+    private boolean isExcludedBatchAttribute(String key) {
+        if (key == null) {
+            return true;
+        }
+
+        String normalized = key.trim().toLowerCase(Locale.ROOT);
+        return "nodename".equals(normalized)
+                || "batchid".equals(normalized)
+                || "filename".equals(normalized)
+                || "id".equals(normalized);
     }
 }
