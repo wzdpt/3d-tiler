@@ -99,12 +99,17 @@ public class CityGmlConverter extends AbstractGeometryConverter implements Conve
             CityGMLInputFactory factory = context.createCityGMLInputFactory();
             CityGMLReader reader = factory.createCityGMLReader(file);
 
+            DefaultSceneFactory defaultSceneFactory = new DefaultSceneFactory();
             while (reader.hasNext()) {
                 CityModel cityModel = (CityModel) reader.next();
-                List<List<GaiaSurfaceModel>> buildingSurfacesList = new ArrayList<>();
                 List<AbstractCityObjectProperty> cityObjectMembers = cityModel.getCityObjectMembers();
                 for (AbstractCityObjectProperty cityObjectProperty : cityObjectMembers) {
                     AbstractCityObject cityObject = cityObjectProperty.getObject();
+                    if (cityObject == null) {
+                        continue;
+                    }
+
+                    List<GaiaSurfaceModel> cityObjectSurfaces = new ArrayList<>();
 
                     List<SolidProperty> solidProperties = extractSolid(cityObject);
                     for (SolidProperty solidProperty : solidProperties) {
@@ -112,21 +117,16 @@ public class CityGmlConverter extends AbstractGeometryConverter implements Conve
                         if (solid == null) {
                             log.error("[ERROR] No solid found for city object: {}", cityObject.getId());
                         } else {
-                            buildingSurfacesList.add(convertSolidSurfaceProperty(cityObject, solid));
+                            cityObjectSurfaces.addAll(convertSolidSurfaceProperty(cityObject, solid));
                         }
                     }
 
                     List<MultiSurfaceProperty> multiSurfaceProperties = extractMultiSurfaceProperty(cityObject);
                     for (MultiSurfaceProperty multiSurfaceProperty : multiSurfaceProperties) {
-                        buildingSurfacesList.add(convertMultiSurfaceProperty(cityObject, multiSurfaceProperty));
+                        cityObjectSurfaces.addAll(convertMultiSurfaceProperty(cityObject, multiSurfaceProperty));
                     }
 
-                }
-
-                DefaultSceneFactory defaultSceneFactory = new DefaultSceneFactory();
-
-                for (List<GaiaSurfaceModel> surfaces : buildingSurfacesList) {
-                    if (surfaces.isEmpty()) {
+                    if (cityObjectSurfaces.isEmpty()) {
                         continue;
                     }
 
@@ -134,10 +134,13 @@ public class CityGmlConverter extends AbstractGeometryConverter implements Conve
                     GaiaNode rootNode = scene.getNodes().get(0);
 
                     GaiaAttribute attribute = scene.getAttribute();
-                    //attribute.setAttributes(surfaces.getProperties());
+                    String cityObjectId = cityObject.getId() != null ? cityObject.getId() : "unknown";
+                    attribute.setNodeName(cityObjectId);
+                    attribute.getAttributes().put("name", cityObjectId);
+                    attribute.getAttributes().put("geometry", cityObjectId);
 
                     GaiaBoundingBox globalBoundingBox = new GaiaBoundingBox();
-                    for (GaiaSurfaceModel buildingSurface : surfaces) {
+                    for (GaiaSurfaceModel buildingSurface : cityObjectSurfaces) {
                         GaiaBoundingBox localBoundingBox = buildingSurface.getBoundingBox();
                         globalBoundingBox.addBoundingBox(localBoundingBox);
                     }
@@ -149,7 +152,7 @@ public class CityGmlConverter extends AbstractGeometryConverter implements Conve
 
                     CoordinateReferenceSystem crs = options.getSourceCrs();
 
-                    for (GaiaSurfaceModel buildingSurface : surfaces) {
+                    for (GaiaSurfaceModel buildingSurface : cityObjectSurfaces) {
                         GaiaMaterial material = getMaterialByClassification(scene.getMaterials(), buildingSurface.getClassification());
 
                         // Check if buildingSurface has holes
