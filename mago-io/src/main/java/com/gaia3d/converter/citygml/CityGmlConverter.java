@@ -39,6 +39,7 @@ import org.citygml4j.core.model.vegetation.SolitaryVegetationObject;
 import org.citygml4j.core.model.waterbody.WaterBody;
 import org.citygml4j.core.model.waterbody.WaterGroundSurface;
 import org.citygml4j.core.model.waterbody.WaterSurface;
+import org.citygml4j.core.model.generics.GenericAttributeSet;
 import org.citygml4j.xml.CityGMLContext;
 import org.citygml4j.xml.CityGMLContextException;
 import org.citygml4j.xml.reader.CityGMLInputFactory;
@@ -60,6 +61,7 @@ import org.xmlobjects.model.Child;
 
 import javax.xml.namespace.QName;
 import java.io.File;
+import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -138,6 +140,7 @@ public class CityGmlConverter extends AbstractGeometryConverter implements Conve
                     attribute.setNodeName(cityObjectId);
                     attribute.getAttributes().put("name", cityObjectId);
                     attribute.getAttributes().put("geometry", cityObjectId);
+                    appendGenericAttributes(attribute.getAttributes(), cityObject);
 
                     GaiaBoundingBox globalBoundingBox = new GaiaBoundingBox();
                     for (GaiaSurfaceModel buildingSurface : cityObjectSurfaces) {
@@ -212,7 +215,8 @@ public class CityGmlConverter extends AbstractGeometryConverter implements Conve
 
                             // interior points
                             List<List<Vector3d>> interiorPolygonsLocal = new ArrayList<>();
-                            for (List<Vector3d> interiorPolygon : interiorPolygons) {
+                            List<List<Vector3d>> safeInteriorPolygons = interiorPolygons == null ? List.of() : interiorPolygons;
+                            for (List<Vector3d> interiorPolygon : safeInteriorPolygons) {
                                 List<Vector3d> interiorPolygonLocal = new ArrayList<>();
                                 for (Vector3d position : interiorPolygon) {
                                     if (crs.getName().equals("EPSG:4978")) {
@@ -259,6 +263,78 @@ public class CityGmlConverter extends AbstractGeometryConverter implements Conve
         }
 
         return scenes;
+    }
+
+    private void appendGenericAttributes(Map<String, String> targetAttributes, AbstractCityObject cityObject) {
+        if (!cityObject.isSetGenericAttributes()) {
+            return;
+        }
+
+        for (AbstractGenericAttributeProperty property : cityObject.getGenericAttributes()) {
+            if (property == null) {
+                continue;
+            }
+
+            AbstractGenericAttribute<?> genericAttribute = property.getObject();
+            if (genericAttribute == null) {
+                continue;
+            }
+
+            appendGenericAttribute(targetAttributes, genericAttribute, null);
+        }
+    }
+
+    private void appendGenericAttribute(Map<String, String> targetAttributes, AbstractGenericAttribute<?> genericAttribute, String keyPrefix) {
+        String name = genericAttribute.getName();
+        if (name == null || name.isBlank()) {
+            return;
+        }
+
+        String key = keyPrefix == null ? name : keyPrefix + "." + name;
+        if (genericAttribute instanceof GenericAttributeSet genericAttributeSet) {
+            if (!genericAttributeSet.isSetValue()) {
+                return;
+            }
+
+            for (AbstractGenericAttributeProperty childProperty : genericAttributeSet.getValue()) {
+                if (childProperty == null) {
+                    continue;
+                }
+
+                AbstractGenericAttribute<?> childAttribute = childProperty.getObject();
+                if (childAttribute != null) {
+                    appendGenericAttribute(targetAttributes, childAttribute, key);
+                }
+            }
+            return;
+        }
+
+        String value = genericValueToString(genericAttribute.getValue());
+        if (value != null) {
+            targetAttributes.putIfAbsent(key, value);
+        }
+    }
+
+    private String genericValueToString(Object value) {
+        if (value == null) {
+            return null;
+        }
+
+        if (value instanceof Number || value instanceof Boolean || value instanceof CharSequence) {
+            return value.toString();
+        }
+
+        try {
+            Method getValueMethod = value.getClass().getMethod("getValue");
+            Object nestedValue = getValueMethod.invoke(value);
+            if (nestedValue != null) {
+                return nestedValue.toString();
+            }
+        } catch (Exception ignored) {
+            // Fallback to default string conversion.
+        }
+
+        return value.toString();
     }
 
     private List<GaiaSurfaceModel> convertSolidSurfaceProperty(AbstractCityObject cityObject, AbstractSolid abstractSolid) {
@@ -397,7 +473,6 @@ public class CityGmlConverter extends AbstractGeometryConverter implements Conve
 
     private List<GaiaSurfaceModel> convertSurfaceProperty(AbstractCityObject cityObject, Classification classification, List<SurfaceProperty> surfaceProperties) {
         List<GaiaSurfaceModel> buildingSurfaces = new ArrayList<>();
-        int surfaceCount = surfaceProperties.size();
         for (SurfaceProperty surfaceProperty : surfaceProperties) {
             AbstractSurface abstractSurface = surfaceProperty.getObject();
             if (abstractSurface instanceof CompositeSurface compositeSurface) {
@@ -530,7 +605,6 @@ public class CityGmlConverter extends AbstractGeometryConverter implements Conve
             lod2Solid = object.getLod2Solid();
             lod3Solid = object.getLod3Solid();
         } else if (cityObject instanceof ReliefFeature object) {
-            List<AbstractReliefComponentProperty> abstractReliefComponents = object.getReliefComponents();
             log.debug("ReliefFeature: {}", object.getId());
         } else {
             log.debug("Unsupported city object type: {}", cityObject.getClass().getSimpleName());
@@ -983,7 +1057,6 @@ public class CityGmlConverter extends AbstractGeometryConverter implements Conve
 
         List<AbstractFillingSurfaceProperty> fillingSurfaceProperties = null;
         List<AbstractReliefComponentProperty> reliefComponentProperties = null;
-        List<AbstractCityObject> childCityObjects = new ArrayList<>();
         if (spaceBoundary instanceof CeilingSurface object) {
             lod0MultiSurface = object.getLod0MultiSurface();
             lod1MultiSurface = object.getLod1MultiSurface();
